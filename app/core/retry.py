@@ -1,0 +1,59 @@
+import asyncio
+from collections.abc import Callable
+import functools
+import inspect
+from typing import Any
+
+import structlog
+
+
+logger = structlog.get_logger(__name__)
+
+
+class Retry:
+    """Retry decorator for async functions."""
+
+    def __init__(
+        self,
+        max_attempts: int = 3,
+        back_off: int = 2,
+        start_delay: float = 0.5,
+        exceptions: tuple[type[BaseException], ...] | None = None,
+        on_retry: Callable[[BaseException, int, float], Any] | None = None,
+    ) -> None:
+        self._max_attempts = max_attempts
+        self._back_off = back_off
+        self._start_delay = start_delay
+        self._exceptions: tuple[type[BaseException], ...] = exceptions or (Exception,)
+        self._on_retry = on_retry
+
+    def __call__(self, fn: Callable) -> Callable:
+        assert inspect.iscoroutinefunction(fn)  # noqa: S101
+
+        @functools.wraps(fn)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            time_to_sleep = self._start_delay
+            for attempt in range(1, self._max_attempts):
+                try:
+                    return await fn(*args, **kwargs)
+                except self._exceptions as e:
+                    if self._on_retry is not None:
+                        res = self._on_retry(e, attempt, time_to_sleep)
+                        if asyncio.iscoroutine(res):
+                            await res
+                    logger.warning(
+                        'retry_after_failure',
+                        function=fn.__name__,
+                        attempt=attempt,
+                        sleep=time_to_sleep,
+                        error=str(e),
+                    )
+                    await asyncio.sleep(time_to_sleep)
+                    time_to_sleep *= self._back_off
+
+            return await fn(*args, **kwargs)
+
+        return wrapper
+
+
+retry = Retry
