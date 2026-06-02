@@ -51,14 +51,17 @@ jobs:
     steps:
       - name: Check deploy secrets present
         shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           set -euo pipefail
-          for k in SSH_HOST SSH_USER SSH_KEY DEPLOY_PATH; do
-            if [ -z "${{ secrets[k] }}" ]; then
-              echo "Missing secret: $k"
-              exit 1
-            fi
-          done
+          [ -n "$SSH_HOST" ] || { echo "Missing secret: SSH_HOST"; exit 1; }
+          [ -n "$SSH_USER" ] || { echo "Missing secret: SSH_USER"; exit 1; }
+          [ -n "$SSH_KEY" ]  || { echo "Missing secret: SSH_KEY"; exit 1; }
+          [ -n "$DEPLOY_PATH" ] || { echo "Missing secret: DEPLOY_PATH"; exit 1; }
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
